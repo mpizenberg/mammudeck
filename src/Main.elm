@@ -2815,16 +2815,16 @@ px int =
 
 
 renderColumns : Model -> Html Msg
-renderColumns model =
+renderColumns { renderEnv, feedSet } =
     let
         leftColumn =
-            td [] [ Lazy.lazy renderLeftColumn model.renderEnv ]
+            td [] [ Lazy.lazy renderLeftColumn renderEnv ]
 
         feedColumn =
             \feed ->
-                td [] [ Lazy.lazy2 renderFeed model.renderEnv feed ]
+                td [] [ Lazy.lazy2 renderFeed renderEnv feed ]
     in
-    table [] [ tr [] (leftColumn :: List.map feedColumn model.feedSet.feeds) ]
+    table [] [ tr [] (leftColumn :: List.map feedColumn feedSet.feeds) ]
 
 
 primaryServerLine : Model -> Html Msg
