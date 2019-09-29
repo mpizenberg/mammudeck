@@ -22,7 +22,10 @@ module Mammudeck.Types exposing
     , NotificationFeedParams
     , PublicFeedFlags
     , PublicFeedParams
+    , RenderEnv
     , Renderer
+    , Style(..)
+    , StyleProperties
     , UserFeedFlags
     , UserFeedParams
     , allButMentionNotificationExclusions
@@ -252,4 +255,29 @@ type alias GangedNotification =
     { id : String
     , notification : Notification
     , accounts : List Account
+    }
+
+
+
+-- Hackathon ###################################################################
+
+
+type alias RenderEnv =
+    { loginServer : Maybe String
+    , style : Style
+
+    -- not persistent
+    , windowSize : ( Int, Int )
+    , here : Zone
+    }
+
+
+type Style
+    = DarkStyle
+    | LightStyle
+
+
+type alias StyleProperties =
+    { backgroundColor : String
+    , color : String
     }

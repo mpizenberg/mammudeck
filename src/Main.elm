@@ -28,6 +28,7 @@ import Browser.Events as Events
 import Browser.Navigation as Navigation exposing (Key)
 import Char
 import Cmd.Extra exposing (addCmd, withCmd, withCmds, withNoCmd)
+import Deck
 import Dialog
 import Dict exposing (Dict)
 import File exposing (File)
@@ -65,7 +66,6 @@ import Html.Attributes
         , value
         )
 import Html.Events exposing (keyCode, on, onClick, onInput)
-import Html.Lazy as Lazy
 import Html.Parser as Parser
 import Html.Parser.Util as Util
 import Http
@@ -85,6 +85,8 @@ import Mammudeck.Types as Types
         , FeedType(..)
         , FetchType(..)
         , GangedNotification
+        , RenderEnv
+        , Style(..)
         )
 import Markdown
 import Mastodon.EncodeDecode as ED
@@ -2140,11 +2142,6 @@ type alias StyleProperties =
     }
 
 
-type Style
-    = DarkStyle
-    | LightStyle
-
-
 styles :
     { dark : StyleProperties
     , light : StyleProperties
@@ -2243,7 +2240,7 @@ view model =
                 renderSplashScreen model
 
             ColumnsPage ->
-                renderColumns model
+                Deck.renderColumns deckMsg model (pageSelector True True model.page)
         ]
     }
 
@@ -2362,45 +2359,9 @@ There's a huge list of servers at [fediverse.network](https://fediverse.network/
         ]
 
 
-{-| Pixels
--}
 columnWidth : Int
 columnWidth =
     300
-
-
-leftColumnWidth : Int
-leftColumnWidth =
-    120
-
-
-renderLeftColumn : RenderEnv -> Html Msg
-renderLeftColumn renderEnv =
-    let
-        { color } =
-            getStyle renderEnv.style
-    in
-    div
-        [ style "color" color
-        , style "width" <| px leftColumnWidth
-        , style "padding-top" "5px"
-        ]
-        [ case renderEnv.loginServer of
-            Nothing ->
-                text ""
-
-            Just server ->
-                span []
-                    [ link server <| "https://" ++ server
-                    , br
-                    ]
-        , pageSelector False (renderEnv.loginServer /= Nothing) ColumnsPage
-        , br
-        , button (ColumnsUIMsg ReloadAllColumns) "reload"
-        , br
-        , button (ColumnsUIMsg ShowEditColumnsDialog) "edit"
-        , br
-        ]
 
 
 renderFeed : RenderEnv -> Feed -> Html Msg
@@ -2812,19 +2773,6 @@ renderAttachment _ attachment =
 px : Int -> String
 px int =
     String.fromInt int ++ "px"
-
-
-renderColumns : Model -> Html Msg
-renderColumns { renderEnv, feedSet } =
-    let
-        leftColumn =
-            td [] [ Lazy.lazy renderLeftColumn renderEnv ]
-
-        feedColumn =
-            \feed ->
-                td [] [ Lazy.lazy2 renderFeed renderEnv feed ]
-    in
-    table [] [ tr [] (leftColumn :: List.map feedColumn feedSet.feeds) ]
 
 
 primaryServerLine : Model -> Html Msg
@@ -3502,4 +3450,19 @@ special : { nbsp : String, copyright : String }
 special =
     { nbsp = stringFromCode 160 -- \u00A0
     , copyright = stringFromCode 169 -- \u00A9
+    }
+
+
+
+-- HACKATHON ###################################################################
+
+
+deckMsg : Deck.Msg Msg
+deckMsg =
+    { reloadAllColumns = ColumnsUIMsg ReloadAllColumns
+    , showEditColumnsDialog = ColumnsUIMsg ShowEditColumnsDialog
+    , dismissDialog = ColumnsUIMsg DismissDialog
+    , addFeedColumn = ColumnsUIMsg << AddFeedColumn
+    , deleteFeedColumn = ColumnsUIMsg << DeleteFeedColumn
+    , userNameInput = ColumnsUIMsg << UserNameInput
     }
