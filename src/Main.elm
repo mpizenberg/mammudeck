@@ -2817,37 +2817,14 @@ px int =
 renderColumns : Model -> Html Msg
 renderColumns model =
     let
-        renderEnv =
-            model.renderEnv
+        leftColumn =
+            td [] [ Lazy.lazy renderLeftColumn model.renderEnv ]
 
-        { feeds } =
-            model.feedSet
-
-        ( _, _ ) =
-            renderEnv.windowSize
+        feedColumn =
+            \feed ->
+                td [] [ Lazy.lazy2 renderFeed model.renderEnv feed ]
     in
-    renderCenteredScreen model
-        ""
-        [ table
-            [--style "width" <| px tableWidth
-            ]
-            [ tr
-                [-- style "width" <| px tableWidth
-                ]
-              <|
-                List.concat
-                    [ [ td [ style "vertical-align" "top" ]
-                            [ Lazy.lazy renderLeftColumn renderEnv ]
-                      ]
-                    , List.map
-                        (\feed ->
-                            td [ style "vertical-align" "top" ]
-                                [ Lazy.lazy2 renderFeed renderEnv feed ]
-                        )
-                        feeds
-                    ]
-            ]
-        ]
+    table [] [ tr [] (leftColumn :: List.map feedColumn model.feedSet.feeds) ]
 
 
 primaryServerLine : Model -> Html Msg
