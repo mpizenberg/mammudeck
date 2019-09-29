@@ -53,7 +53,6 @@ import Html
 import Html.Attributes
     exposing
         ( alt
-        , class
         , disabled
         , href
         , placeholder
@@ -67,9 +66,7 @@ import Html.Attributes
         )
 import Html.Events exposing (keyCode, on, onClick, onInput)
 import Html.Parser as Parser
-import Html.Parser.Util as Util
 import Http
-import Iso8601
 import Json.Decode as JD exposing (Decoder)
 import Json.Decode.Pipeline exposing (optional, required)
 import Json.Encode as JE exposing (Value)
@@ -84,7 +81,6 @@ import Mammudeck.Types as Types
         , FeedSetDefinition
         , FeedType(..)
         , FetchType(..)
-        , GangedNotification
         , RenderEnv
         , Style(..)
         )
@@ -94,18 +90,13 @@ import Mastodon.Entity
     exposing
         ( Account
         , App
-        , Attachment
         , AttachmentType(..)
         , Authorization
-        , Datetime
         , Entity(..)
         , Field
         , FilterContext(..)
-        , Notification
         , NotificationType(..)
         , Privacy(..)
-        , Status
-        , UrlString
         , Visibility(..)
         , WrappedStatus(..)
         )
@@ -124,8 +115,6 @@ import PortFunnel.WebSocket as WebSocket
 import PortFunnels exposing (FunnelDict, Handler(..), State)
 import Task
 import Time exposing (Posix, Zone)
-import Time.Format as Format
-import Time.Format.Config.Configs as Configs
 import Url exposing (Url)
 import Url.Parser as Parser exposing ((<?>))
 import Url.Parser.Query as QP
@@ -2359,272 +2348,6 @@ There's a huge list of servers at [fediverse.network](https://fediverse.network/
         ]
 
 
-columnWidth : Int
-columnWidth =
-    300
-
-
-renderFeed : RenderEnv -> Feed -> Html Msg
-renderFeed renderEnv { feedType, elements } =
-    let
-        { color } =
-            getStyle renderEnv.style
-
-        ( _, h ) =
-            renderEnv.windowSize
-    in
-    div
-        [ style "width" <| px columnWidth
-        , style "height" <| px (h - 20)
-        , style "border" <| "1px solid " ++ color
-        ]
-        [ div
-            [ style "border" <| "1px solid " ++ color
-            , style "text-align" "center"
-            , style "color" color
-            ]
-            [ feedTitle feedType ]
-        , div
-            [ style "height" "calc(100% - 1.4em)"
-            , style "overflow-y" "auto"
-            , style "overflow-x" "hidden"
-            ]
-          <|
-            case elements of
-                StatusElements statuses ->
-                    List.map (renderStatus renderEnv) statuses
-
-                NotificationElements notifications ->
-                    let
-                        gangedNotifications =
-                            gangNotifications notifications
-
-                        ( _, _ ) =
-                            ( Debug.log "notifications" <| List.length notifications
-                            , Debug.log "  ganged" <| List.length gangedNotifications
-                            )
-                    in
-                    List.map (renderGangedNotification renderEnv) gangedNotifications
-
-                _ ->
-                    [ text "" ]
-        ]
-
-
-renderGangedNotification : RenderEnv -> GangedNotification -> Html Msg
-renderGangedNotification renderEnv gangedNotification =
-    let
-        notification =
-            gangedNotification.notification
-    in
-    case gangedNotification.accounts of
-        account :: others ->
-            if others == [] then
-                renderNotification renderEnv notification
-
-            else
-                renderMultiNotification renderEnv
-                    account
-                    others
-                    notification
-
-        _ ->
-            renderNotification renderEnv notification
-
-
-renderMultiNotification : RenderEnv -> Account -> List Account -> Notification -> Html Msg
-renderMultiNotification renderEnv account others notification =
-    let
-        { color } =
-            getStyle renderEnv.style
-
-        othersCount =
-            List.length others
-
-        display_name =
-            account.display_name ++ " and " ++ String.fromInt othersCount ++ " others "
-
-        description =
-            notificationDescriptionWithDisplayName display_name notification
-
-        timeString =
-            formatIso8601 renderEnv.here notification.created_at
-    in
-    div
-        [ style "border" <| "1px solid" ++ color
-        , style "color" color
-        , style "padding" "0 3px"
-        ]
-        [ description
-        , br
-        , text timeString
-        , br
-        , List.map
-            (\other ->
-                imageLink
-                    { imageUrl = other.avatar
-                    , linkUrl = other.url
-                    , altText = other.display_name
-                    , h = "1.5em"
-                    }
-            )
-            (account :: others)
-            |> List.intersperse (text " ")
-            |> span []
-        , renderNotificationBody renderEnv notification
-        ]
-
-
-notificationStatusId : Notification -> String
-notificationStatusId notification =
-    case notification.status of
-        Just { id } ->
-            id
-
-        Nothing ->
-            ""
-
-
-gangNotifications : List Notification -> List GangedNotification
-gangNotifications notifications =
-    let
-        loop : List Notification -> List GangedNotification -> List GangedNotification
-        loop tail res =
-            case tail of
-                [] ->
-                    List.reverse res
-
-                car :: cdr ->
-                    let
-                        id =
-                            notificationStatusId car
-                    in
-                    case
-                        LE.find
-                            (\gn ->
-                                (id == gn.id)
-                                    && (car.type_ == gn.notification.type_)
-                            )
-                            res
-                    of
-                        Nothing ->
-                            loop cdr <|
-                                { id = id
-                                , notification = car
-                                , accounts = [ car.account ]
-                                }
-                                    :: res
-
-                        Just gn ->
-                            loop cdr <|
-                                { gn
-                                    | accounts = car.account :: gn.accounts
-                                }
-                                    :: List.filter ((/=) gn) res
-    in
-    loop notifications []
-
-
-notificationDescription : Notification -> Html Msg
-notificationDescription notification =
-    notificationDescriptionWithDisplayName notification.account.display_name
-        notification
-
-
-notificationDescriptionWithDisplayName : String -> Notification -> Html Msg
-notificationDescriptionWithDisplayName display_name notification =
-    let
-        postName =
-            if notification.type_ == PollNotification then
-                text "poll"
-
-            else
-                text "your post"
-    in
-    case notification.type_ of
-        FollowNotification ->
-            span [] [ b display_name, text " followed you" ]
-
-        MentionNotification ->
-            span [] [ b display_name, text " mentioned you" ]
-
-        ReblogNotification ->
-            span [] [ b display_name, text " reblogged ", postName ]
-
-        FavouriteNotification ->
-            span [] [ b display_name, text " favorited ", postName ]
-
-        PollNotification ->
-            span [] [ b display_name, text "'s ", postName, text " is closed" ]
-
-
-renderNotification : RenderEnv -> Notification -> Html Msg
-renderNotification renderEnv notification =
-    let
-        description =
-            notificationDescription notification
-
-        { color } =
-            getStyle renderEnv.style
-    in
-    div [ style "border" <| "1px solid" ++ color ]
-        [ div []
-            [ renderAccount color
-                renderEnv.here
-                notification.account
-                description
-                notification.created_at
-                Nothing
-            , renderNotificationBody renderEnv notification
-            ]
-        ]
-
-
-renderNotificationBody : RenderEnv -> Notification -> Html Msg
-renderNotificationBody renderEnv notification =
-    let
-        { color } =
-            getStyle renderEnv.style
-    in
-    case notification.status of
-        Nothing ->
-            text ""
-
-        Just status ->
-            let
-                body =
-                    case Parser.run status.content of
-                        Ok nodes ->
-                            Util.toVirtualDom nodes
-
-                        Err _ ->
-                            [ text status.content ]
-
-                timeString =
-                    formatIso8601 renderEnv.here status.created_at
-
-                postLink =
-                    case status.url of
-                        Nothing ->
-                            text timeString
-
-                        Just url ->
-                            link timeString url
-            in
-            div []
-                [ hr
-                , div
-                    [ class "content"
-                    , style "color" color
-                    ]
-                  <|
-                    postLink
-                        :: body
-                , div [] <|
-                    List.map (renderAttachment renderEnv) status.media_attachments
-                ]
-
-
 feedTitle : FeedType -> Html Msg
 feedTitle feedType =
     case feedType of
@@ -2644,94 +2367,6 @@ feedTitle feedType =
             text ""
 
 
-renderAccount : String -> Zone -> Account -> Html Msg -> Datetime -> Maybe UrlString -> Html Msg
-renderAccount color zone account description datetime url =
-    table []
-        [ tr []
-            [ td []
-                [ imageLink
-                    { imageUrl = account.avatar
-                    , linkUrl = account.url
-                    , altText = ""
-                    , h = "3em"
-                    }
-                ]
-            , td [ style "color" color ]
-                [ description
-                , br
-                , link ("@" ++ account.username) account.url
-                , br
-                , let
-                    timeString =
-                        formatIso8601 zone datetime
-                  in
-                  case url of
-                    Nothing ->
-                        text timeString
-
-                    Just u ->
-                        link timeString u
-                ]
-            ]
-        ]
-
-
-renderStatus : RenderEnv -> Status -> Html Msg
-renderStatus renderEnv statusIn =
-    let
-        ( status, account, reblogAccount ) =
-            case statusIn.reblog of
-                Nothing ->
-                    ( statusIn, statusIn.account, Nothing )
-
-                Just (WrappedStatus reblog) ->
-                    ( reblog, reblog.account, Just statusIn.account )
-
-        { color } =
-            getStyle renderEnv.style
-
-        body =
-            case Parser.run status.content of
-                Ok nodes ->
-                    Util.toVirtualDom nodes
-
-                Err _ ->
-                    [ text status.content ]
-    in
-    div [ style "border" <| "1px solid " ++ color ]
-        [ div []
-            [ div
-                [ class "content"
-                , style "color" color
-                ]
-                [ case reblogAccount of
-                    Nothing ->
-                        text ""
-
-                    Just acct ->
-                        span []
-                            [ link acct.display_name acct.url
-                            , text " reblogged:"
-                            ]
-                , renderAccount color
-                    renderEnv.here
-                    account
-                    (b account.display_name)
-                    status.created_at
-                    status.url
-                ]
-            , hr
-            , div
-                [ class "content"
-                , style "color" color
-                ]
-                body
-            , div [] <|
-                List.map (renderAttachment renderEnv) status.media_attachments
-            ]
-        ]
-
-
 hrpct : Int -> Html msg
 hrpct pct =
     Html.hr [ style "width" <| String.fromInt pct ++ "%" ] []
@@ -2740,39 +2375,6 @@ hrpct pct =
 hr : Html msg
 hr =
     hrpct 90
-
-
-formatIso8601 : Zone -> String -> String
-formatIso8601 zone iso8601 =
-    case Iso8601.toTime iso8601 of
-        Err _ ->
-            iso8601
-
-        Ok posix ->
-            Format.format (Configs.getConfig "en_us")
-                "%y%m%d %-H:%M:%S"
-                zone
-                posix
-
-
-renderAttachment : RenderEnv -> Attachment -> Html Msg
-renderAttachment _ attachment =
-    case attachment.type_ of
-        ImageAttachment ->
-            img
-                [ src attachment.preview_url
-                , alt "image"
-                , style "width" "100%"
-                ]
-                []
-
-        _ ->
-            text ""
-
-
-px : Int -> String
-px int =
-    String.fromInt int ++ "px"
 
 
 primaryServerLine : Model -> Html Msg
